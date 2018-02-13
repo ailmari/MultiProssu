@@ -1,12 +1,23 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <math.h>
 #include "lodepng.h"
+
+#define L_INPUT_IMAGE_NAME "im0.png"
+#define R_INPUT_IMAGE_NAME "im1.png"
+#define OUTPUT_IMAGE_NAME "depthmap.png"
+
+#define MAXDISP 65
+#define MINDISP 0
+
+#define THRESHOLD 16
 
 void resize_and_greyscale(uint8_t* rgba, uint8_t* grey);
 void zncc(uint8_t* dispmap, uint8_t* left, uint8_t* right, int width, int height, int disp_min, int disp_max);
 void cross_check(uint8_t* dispmap_CC, uint8_t* dispmap_L, uint8_t* dispmap_R, int width, int height, int threshold);
+void occlusion_fill(uint8_t* dispmap_OF, uint8_t* dispmap_CC, int width, int height, int nsize);
 void normalize(uint8_t* dispmap, unsigned width, unsigned height);
 
 int main()
@@ -25,6 +36,8 @@ int main()
 	uint8_t* disp_RL;
 	// Cross-checked disparity map
 	uint8_t* disp_CC;
+	// Cross-checked and occlusion-filled disparity map
+	uint8_t* disp_CC_OF;
 
 	// Width and height for input images
 	unsigned w_in_L;
@@ -38,19 +51,11 @@ int main()
 
 	// Decodes images
 	// Left
-	error = lodepng_decode32_file(&rgba_L, &w_in_L, &h_in_L, "im0.png");
+	error = lodepng_decode32_file(&rgba_L, &w_in_L, &h_in_L, L_INPUT_IMAGE_NAME);
 	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
 	// Right
-	error = lodepng_decode32_file(&rgba_R, &w_in_R, &h_in_R, "im1.png");
+	error = lodepng_decode32_file(&rgba_R, &w_in_R, &h_in_R, R_INPUT_IMAGE_NAME);
 	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
-
-
-	// We check that images are of same size
-	if ((w_in_L != w_in_R) || (h_in_L != h_in_R))
-	{
-		printf("Error: image sizes not matching");
-		return 0;
-	}
 
 
 	// Resizes images
@@ -67,30 +72,28 @@ int main()
 	// Calculates disparities
 	// Left
 	disp_LR = (uint8_t*)malloc(w_out * h_out);
-	zncc(disp_LR, grey_L, grey_R, w_out, h_out, 0, 65);
+	zncc(disp_LR, grey_L, grey_R, w_out, h_out, MINDISP, MAXDISP);
 	// Right
 	disp_RL = (uint8_t*)malloc(w_out * h_out);
-	zncc(disp_RL, grey_R, grey_L, w_out, h_out, -65, 0);
+	zncc(disp_RL, grey_R, grey_L, w_out, h_out, -MAXDISP, MINDISP);
 
 
 	// Cross-checking performed here
-	//disp_CC = (uint8_t*)malloc(w_out * h_out);
-	//cross_check(disp_CC, disp_LR, disp_RL, w_out, h_out, 8);
+	disp_CC = (uint8_t*)malloc(w_out * h_out);
+	cross_check(disp_CC, disp_LR, disp_RL, w_out, h_out, THRESHOLD);
+
+
+	// Occlusion filling here
+	disp_CC_OF = (uint8_t*)malloc(w_out * h_out);
+	//occlusion_fill(disp_CC_OF, disp_CC, w_out, h_out, 16);
 
 
 	// Normalizes image
-	// Left
-	normalize(disp_LR, w_out, h_out);
-	// Right
-	normalize(disp_RL, w_out, h_out);
+	normalize(disp_CC_OF, w_out, h_out);
 
 
-	// Encodes the image.
-	// Left
-	error = lodepng_encode_file("dispL.png", disp_LR, w_out, h_out, LCT_GREY, 8);
-	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
-	// Right
-	error = lodepng_encode_file("dispR.png", disp_RL, w_out, h_out, LCT_GREY, 8);
+	// Encodes the image
+	error = lodepng_encode_file(OUTPUT_IMAGE_NAME, disp_CC, w_out, h_out, LCT_GREY, 8);
 	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
 
 	return 0;
@@ -119,7 +122,7 @@ void zncc(uint8_t* dispmap, uint8_t* left, uint8_t* right, int width, int height
 	double score_best;
 	double score_current;
 
-	uint8_t disp_best;
+	int disp_best;
 
 	double lbmean;
 	double rbmean;
@@ -201,7 +204,7 @@ void zncc(uint8_t* dispmap, uint8_t* left, uint8_t* right, int width, int height
 					disp_best = disp;
 				}
 			}
-			dispmap[735 * y_img + x_img] = disp_best;//(uint8_t)abs(disp_best);
+			dispmap[735 * y_img + x_img] = (uint8_t)abs(disp_best);
 		}
 	}
 };
@@ -219,6 +222,11 @@ void cross_check(uint8_t* dispmap_CC, uint8_t* dispmap_L, uint8_t* dispmap_R, in
 			dispmap_CC[i] = dispmap_L[i];
 		}
 	}
+};
+
+void occlusion_fill(uint8_t* dispmap_OF, uint8_t* dispmap_CC, int width, int height, int nsize)
+{
+
 };
 
 void normalize(uint8_t* dispmap, unsigned width, unsigned height)
