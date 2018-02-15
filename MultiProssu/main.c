@@ -8,18 +8,18 @@
 
 #define L_INPUT_IMAGE_NAME "im0.png"
 #define R_INPUT_IMAGE_NAME "im1.png"
-#define OUTPUT_IMAGE_NAME "depthmap.png"
 
 #define MAXDISP 65
 #define MINDISP 0
+#define WIN_SIZE 9
 
 #define THRESHOLD 8
 
-void resize_and_greyscale(uint8_t* rgba, uint8_t* grey);
-void zncc(uint8_t* dispmap, uint8_t* left, uint8_t* right, int width, int height, int disp_min, int disp_max);
-void cross_check(uint8_t* dispmap_CC, uint8_t* dispmap_L, uint8_t* dispmap_R, int width, int height, int threshold);
-void occlusion_fill(uint8_t* dispmap_OF, uint8_t* dispmap_CC, int width, int height);
-void normalize(uint8_t* dispmap, unsigned width, unsigned height);
+void resize_and_greyscale(unsigned char* rgba, unsigned char* grey);
+void zncc(unsigned char* dmap, unsigned char* image1, unsigned char* image2, int width, int height, int min_disp, int max_disp);
+void cross_check(unsigned char* dispmap_CC, unsigned char* dispmap_L, unsigned char* dispmap_R, int width, int height, int threshold);
+void occlusion_fill(unsigned char* dispmap_OF, unsigned char* dispmap_CC, int width, int height);
+void normalize(unsigned char* dispmap, int width, int height);
 
 int main()
 {
@@ -33,18 +33,18 @@ int main()
 	uint32_t error;
 
 	// Left and right RGBA images
-	uint8_t* rgba_L;
-	uint8_t* rgba_R;
+	unsigned char* rgba_L;
+	unsigned char* rgba_R;
 	// Left and right greyscale images
-	uint8_t* grey_L;
-	uint8_t* grey_R;
+	unsigned char* grey_L;
+	unsigned char* grey_R;
 	// Left and right disparity maps
-	uint8_t* disp_LR;
-	uint8_t* disp_RL;
+	unsigned char* disp_LR;
+	unsigned char* disp_RL;
 	// Cross-checked disparity map
-	uint8_t* disp_CC;
+	unsigned char* disp_CC;
 	// Cross-checked and occlusion-filled disparity map
-	uint8_t* disp_CC_OF;
+	unsigned char* disp_CC_OF;
 
 	// Width and height for input images
 	unsigned w_in_L;
@@ -75,41 +75,41 @@ int main()
 	h_out = h_in_L / 4;
 	// Left
 	printf("Resize and greyscale for left...\n");
-	grey_L = (uint8_t*)malloc(w_out * h_out);
+	grey_L = (unsigned char*)malloc(w_out * h_out);
 	resize_and_greyscale(rgba_L, grey_L);
 	// Right
 	printf("Resize and greyscale for right...\n");
-	grey_R = (uint8_t*)malloc(w_out * h_out);
+	grey_R = (unsigned char*)malloc(w_out * h_out);
 	resize_and_greyscale(rgba_R, grey_R);
 
 	
 	// Calculates disparities
 	// Left
 	printf("ZNCC for left-right...\n");
-	disp_LR = (uint8_t*)malloc(w_out * h_out);
+	disp_LR = (unsigned char*)malloc(w_out * h_out);
 	zncc(disp_LR, grey_L, grey_R, w_out, h_out, MINDISP, MAXDISP);
 	// Right
 	printf("ZNCC for right-left...\n");
-	disp_RL = (uint8_t*)malloc(w_out * h_out);
+	disp_RL = (unsigned char*)malloc(w_out * h_out);
 	zncc(disp_RL, grey_R, grey_L, w_out, h_out, -MAXDISP, MINDISP);
 
-
+	
 	// Cross-checking performed here
 	printf("Cross-checking...\n");
-	disp_CC = (uint8_t*)malloc(w_out * h_out);
+	disp_CC = (unsigned char*)malloc(w_out * h_out);
 	cross_check(disp_CC, disp_LR, disp_RL, w_out, h_out, THRESHOLD);
 
-
+	
 	// Occlusion filling here
 	printf("Occlusion-filling...\n");
-	disp_CC_OF = (uint8_t*)malloc(w_out * h_out);
+	disp_CC_OF = (unsigned char*)malloc(w_out * h_out);
 	occlusion_fill(disp_CC_OF, disp_CC, w_out, h_out);
 
 
 	// Normalizes image
 	printf("Normalization...\n");
 	normalize(disp_CC_OF, w_out, h_out);
-
+	
 
 	// Stopping the timer
 	QueryPerformanceCounter(&t2);
@@ -118,17 +118,33 @@ int main()
 	printf("\nTotal execution time: %lf\n\n", elapsed_time);
 	
 
-	// Encodes the image
-	error = lodepng_encode_file(OUTPUT_IMAGE_NAME, disp_CC_OF, w_out, h_out, LCT_GREY, 8);
+	// Encodes the images
+	// Grey left
+	error = lodepng_encode_file("output/grey_L.png", grey_L, w_out, h_out, LCT_GREY, 8);
+	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
+	// Grey right
+	error = lodepng_encode_file("output/grey_R.png", grey_R, w_out, h_out, LCT_GREY, 8);
+	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
+	// Disparity left-right
+	error = lodepng_encode_file("output/disp_LR.png", disp_LR, w_out, h_out, LCT_GREY, 8);
+	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
+	// Disparity right-left
+	error = lodepng_encode_file("output/disp_RL.png", disp_RL, w_out, h_out, LCT_GREY, 8);
+	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
+	// Cross-checked
+	error = lodepng_encode_file("output/disp_CC.png", disp_CC, w_out, h_out, LCT_GREY, 8);
+	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
+	// Cross-checked & occlusion-filled & normalized
+	error = lodepng_encode_file("output/disp_CC_OF.png", disp_CC_OF, w_out, h_out, LCT_GREY, 8);
 	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
 
 	return 0;
 }
 
-void resize_and_greyscale(uint8_t* rgba, uint8_t* grey)
+void resize_and_greyscale(unsigned char* rgba, unsigned char* grey)
 {
 	int y_out, x_out, y_in, x_in;
-	uint8_t red, green, blue;
+	unsigned char red, green, blue;
 	for (y_out = 0; y_out < 2016; y_out+=4)
 	{
 		for (x_out = 0; x_out < 2940; x_out+=4)
@@ -138,104 +154,96 @@ void resize_and_greyscale(uint8_t* rgba, uint8_t* grey)
 			blue = rgba[4 * 2940 * y_out + 4 * x_out + 2];
 			y_in = y_out / 4;
 			x_in = x_out / 4;
-			grey[735 * y_in + x_in] = (uint8_t)(0.2126 * red + 0.7152 * green + 0.0722 * blue);
+			grey[735 * y_in + x_in] = (unsigned char)(0.2126 * red + 0.7152 * green + 0.0722 * blue);
 		}
 	}
 };
 
-void zncc(uint8_t* dispmap, uint8_t* left, uint8_t* right, int width, int height, int disp_min, int disp_max)
+void zncc(unsigned char* dmap, unsigned char* image1, unsigned char* image2, int width, int height, int min_disp, int max_disp)
 {
-	double score_best;
-	double score_current;
+	//int Standard_deviation;
+	double sum_of_window_values1;
+	double sum_of_window_values2;
+	double standart_deviation1;
+	double standart_deviation2;
+	double multistand = 0;
+	double best_disparity_value;
+	double current_max_sum;
+	double average1, average2;
+	int J;
+	int I;
+	int d;
+	int WIN_Y, WIN_X;
+	double std1, std2;
 
-	int disp_best;
+	for (J = 0; J < height; J++) {
+		for (I = 0; I < width; I++) {
+			best_disparity_value = max_disp;
+			current_max_sum = -1;
+			for (d = min_disp; d <= max_disp; d++) {
+				sum_of_window_values1 = 0;
+				sum_of_window_values2 = 0;
+				for (WIN_Y = -WIN_SIZE / 2; WIN_Y < WIN_SIZE / 2; WIN_Y++) {
+					for (WIN_X = -WIN_SIZE / 2; WIN_X < WIN_SIZE / 2; WIN_X++) {
 
-	double lbmean;
-	double rbmean;
-	double lbstd;
-	double rbstd;
-	double cl;
-	double cr;
-
-	int index_L;
-	int index_R;
-	int win_width = 9;
-	int win_height = 9;
-	int win_size = win_width * win_height;
-	int y_win;
-	int x_win;
-	int disp;
-
-	int y_img;
-	int x_img;
-
-	for (y_img = 0; y_img < height; y_img++)
-	{
-		for (x_img = 0; x_img < width; x_img++)
-		{
-			disp_best = disp_max;
-			score_best = -1;
-			for (disp = disp_min; disp <= disp_max; disp++)
-			{
-				lbmean = 0;
-				rbmean = 0;
-				for (y_win = -win_height / 2; y_win < win_height / 2; y_win++)
-				{
-					for (x_win = -win_width / 2; x_win < win_width / 2; x_win++)
-					{
-						if (!(y_img + y_win >= 0) || !(y_img + y_win < height) || !(x_img + x_win >= 0) || !(x_img + x_win < width) || !(x_img + x_win - disp >= 0) || !(x_img + x_win - disp < width))
+						if (J + WIN_Y >= 0 &&
+							I + WIN_X >= 0 &&
+							J + WIN_Y < height &&
+							I + WIN_X < width &&
+							I + WIN_X - d >= 0 &&
+							I + WIN_X - d < width)
 						{
-							continue;
+							//Calculate the mean value for each window
+							sum_of_window_values1 += image1[(WIN_Y + J)*width + (I + WIN_X)];
+							sum_of_window_values2 += image2[(WIN_Y + J)*width + (I + WIN_X - d)];
 						}
-						index_L = (y_img + y_win) * width + (x_img + x_win);
-						index_R = (y_img + y_win) * width + (x_img + x_win - disp);
+						else
+							continue;
 
-						lbmean += left[index_L];
-						rbmean += right[index_R];
+
 					}
 				}
-				lbmean /= win_size;
-				rbmean /= win_size;
+				average1 = sum_of_window_values1 / (WIN_SIZE*WIN_SIZE);
+				average2 = sum_of_window_values2 / (WIN_SIZE*WIN_SIZE);
+				std1 = 0;
+				std2 = 0;
+				multistand = 0;
+				//window_sum = 0;
+				for (WIN_Y = -WIN_SIZE / 2; WIN_Y < WIN_SIZE / 2; WIN_Y++) {
+					for (WIN_X = -WIN_SIZE / 2; WIN_X < WIN_SIZE / 2; WIN_X++) {
 
-				lbstd = 0;
-				rbstd = 0;
-
-				score_current = 0;
-
-				for (y_win = -win_height / 2; y_win < win_height / 2; y_win++)
-				{
-					for (x_win = -win_width / 2; x_win < win_width / 2; x_win++)
-					{
-						if (!(y_img + y_win >= 0) || !(y_img + y_win < height) || !(x_img + x_win >= 0) || !(x_img + x_win < width) || !(x_img + x_win - disp >= 0) || !(x_img + x_win - disp < width))
+						if (J + WIN_Y >= 0 &&
+							I + WIN_X >= 0 &&
+							J + WIN_Y < height &&
+							I + WIN_X < width &&
+							I + WIN_X - d >= 0 &&
+							I + WIN_X - d < width)
 						{
-							continue;
+							//Calculate the actual ZNCC value for each windows
+							standart_deviation1 = image1[(WIN_Y + J)*width + (I + WIN_X)] - average1;
+							standart_deviation2 = image2[(WIN_Y + J)*width + (I + WIN_X - d)] - average2;
+							std1 += standart_deviation1*standart_deviation1;
+							std2 += standart_deviation2*standart_deviation2;
+							multistand += standart_deviation1*standart_deviation2;
 						}
-						index_L = (y_img + y_win) * width + (x_img + x_win);
-						index_R = (y_img + y_win) * width + (x_img + x_win - disp);
+						else
+							continue;
 
-						cl = left[index_L] - lbmean;
-						cr = right[index_R] - rbmean;
-
-						lbstd += cl * cl;
-						rbstd += cr * cr;
-
-						score_current += cl * cr;
 					}
 				}
-				score_current /= sqrt(lbstd) * sqrt(rbstd);
-
-				if (score_current > score_best)
-				{
-					score_best = score_current;
-					disp_best = disp;
+				multistand /= sqrt(std1) * sqrt(std2);
+				if (multistand > current_max_sum) {
+					current_max_sum = multistand;
+					best_disparity_value = d;
 				}
+
 			}
-			dispmap[735 * y_img + x_img] = (uint8_t)abs(disp_best);
+			dmap[width*J + I] = (unsigned char)abs(best_disparity_value);
 		}
 	}
-};
+}
 
-void cross_check(uint8_t* dispmap_CC, uint8_t* dispmap_L, uint8_t* dispmap_R, int width, int height, int threshold)
+void cross_check(unsigned char* dispmap_CC, unsigned char* dispmap_L, unsigned char* dispmap_R, int width, int height, int threshold)
 {
 	for (int i = 0; i < width * height; i++)
 	{
@@ -250,7 +258,7 @@ void cross_check(uint8_t* dispmap_CC, uint8_t* dispmap_L, uint8_t* dispmap_R, in
 	}
 };
 
-void occlusion_fill(uint8_t* dispmap_OF, uint8_t* dispmap_CC, int width, int height)
+void occlusion_fill(unsigned char* dispmap_OF, unsigned char* dispmap_CC, int width, int height)
 {
 	int win_width = 2;
 	int win_height = 2;
@@ -299,26 +307,13 @@ void occlusion_fill(uint8_t* dispmap_OF, uint8_t* dispmap_CC, int width, int hei
 	}
 };
 
-void normalize(uint8_t* dispmap, unsigned width, unsigned height)
+void normalize(unsigned char* dispmap, int width, int height)
 {
-	unsigned max = 0;
-	unsigned min = UCHAR_MAX;
-	
-	for (unsigned i = 0; i < width * height; i++)
-	{
-		if (dispmap[i] > max)
-		{
-			max = dispmap[i];
-		}
+	int max = 65;
+	int min = 0;
 
-		if (dispmap[i] < min)
-		{
-			min = dispmap[i];
-		}
-	}
-
-	for (unsigned i = 0; i < width * height; i++)
+	for (int i = 0; i < width * height; i++)
 	{
-		dispmap[i] = (uint8_t)(255 * (dispmap[i] - min) / (max - min));
+		dispmap[i] = (unsigned char)(255 * (dispmap[i] - min) / (max - min));
 	}
 };
