@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <math.h>
+#include <windows.h>
 #include "lodepng.h"
 
 #define L_INPUT_IMAGE_NAME "im0.png"
@@ -12,16 +13,22 @@
 #define MAXDISP 65
 #define MINDISP 0
 
-#define THRESHOLD 16
+#define THRESHOLD 8
 
 void resize_and_greyscale(uint8_t* rgba, uint8_t* grey);
 void zncc(uint8_t* dispmap, uint8_t* left, uint8_t* right, int width, int height, int disp_min, int disp_max);
 void cross_check(uint8_t* dispmap_CC, uint8_t* dispmap_L, uint8_t* dispmap_R, int width, int height, int threshold);
-void occlusion_fill(uint8_t* dispmap_OF, uint8_t* dispmap_CC, int width, int height, int nsize);
+void occlusion_fill(uint8_t* dispmap_OF, uint8_t* dispmap_CC, int width, int height);
 void normalize(uint8_t* dispmap, unsigned width, unsigned height);
 
 int main()
 {
+	// Timer
+	LARGE_INTEGER frequency;
+	LARGE_INTEGER t1;
+	LARGE_INTEGER t2;
+	double elapsed_time;
+
 	// Error code for LodePNG
 	uint32_t error;
 
@@ -58,42 +65,61 @@ int main()
 	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
 
 
+	// Starting the timer
+	QueryPerformanceFrequency(&frequency); // Get ticks per second
+	QueryPerformanceCounter(&t1);
+
+
 	// Resizes images
 	w_out = w_in_L / 4;
 	h_out = h_in_L / 4;
 	// Left
+	printf("Resize and greyscale for left...\n");
 	grey_L = (uint8_t*)malloc(w_out * h_out);
 	resize_and_greyscale(rgba_L, grey_L);
 	// Right
+	printf("Resize and greyscale for right...\n");
 	grey_R = (uint8_t*)malloc(w_out * h_out);
 	resize_and_greyscale(rgba_R, grey_R);
 
-
+	
 	// Calculates disparities
 	// Left
+	printf("ZNCC for left-right...\n");
 	disp_LR = (uint8_t*)malloc(w_out * h_out);
 	zncc(disp_LR, grey_L, grey_R, w_out, h_out, MINDISP, MAXDISP);
 	// Right
+	printf("ZNCC for right-left...\n");
 	disp_RL = (uint8_t*)malloc(w_out * h_out);
 	zncc(disp_RL, grey_R, grey_L, w_out, h_out, -MAXDISP, MINDISP);
 
 
 	// Cross-checking performed here
+	printf("Cross-checking...\n");
 	disp_CC = (uint8_t*)malloc(w_out * h_out);
 	cross_check(disp_CC, disp_LR, disp_RL, w_out, h_out, THRESHOLD);
 
 
 	// Occlusion filling here
+	printf("Occlusion-filling...\n");
 	disp_CC_OF = (uint8_t*)malloc(w_out * h_out);
-	//occlusion_fill(disp_CC_OF, disp_CC, w_out, h_out, 16);
+	occlusion_fill(disp_CC_OF, disp_CC, w_out, h_out);
 
 
 	// Normalizes image
+	printf("Normalization...\n");
 	normalize(disp_CC_OF, w_out, h_out);
 
 
+	// Stopping the timer
+	QueryPerformanceCounter(&t2);
+	elapsed_time = (t2.QuadPart - t1.QuadPart) * 1000.0 / frequency.QuadPart; // Time in ms
+	elapsed_time /= 1000.0;
+	printf("\nTotal execution time: %lf\n\n", elapsed_time);
+	
+
 	// Encodes the image
-	error = lodepng_encode_file(OUTPUT_IMAGE_NAME, disp_CC, w_out, h_out, LCT_GREY, 8);
+	error = lodepng_encode_file(OUTPUT_IMAGE_NAME, disp_CC_OF, w_out, h_out, LCT_GREY, 8);
 	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
 
 	return 0;
@@ -224,18 +250,61 @@ void cross_check(uint8_t* dispmap_CC, uint8_t* dispmap_L, uint8_t* dispmap_R, in
 	}
 };
 
-void occlusion_fill(uint8_t* dispmap_OF, uint8_t* dispmap_CC, int width, int height, int nsize)
+void occlusion_fill(uint8_t* dispmap_OF, uint8_t* dispmap_CC, int width, int height)
 {
+	int win_width = 2;
+	int win_height = 2;
+	int sum_win;
+	int pixel_count;
+	int mean_win;
 
+	for (int y_img = 0; y_img < height; y_img++)
+	{
+		for (int x_img = 0; x_img < width; x_img++)
+		{
+			if (dispmap_CC[y_img * width + x_img] == 0)
+			{
+				sum_win = 0;
+				pixel_count = 0;
+
+				for (int y_win = -win_height; y_win <= win_height; y_win++)
+				{
+					for (int x_win = -win_width; x_win <= win_width; x_win++)
+					{
+						if (!(y_img + y_win >= 0) ||
+							!(y_img + y_win < height) ||
+							!(x_img + x_win >= 0) ||
+							!(x_img + x_win < width))
+						{
+							continue;
+						}
+						if (dispmap_CC[y_img * width + y_win + x_img + x_win] != 0)
+						{
+							sum_win += dispmap_CC[y_img * width + y_win + x_img + x_win];
+							pixel_count++;
+						}
+					}
+				}
+				if (pixel_count > 0)
+				{
+					mean_win = sum_win / pixel_count;
+					dispmap_OF[y_img * width + x_img] = mean_win;
+				}
+			}
+			else
+			{
+				dispmap_OF[y_img * width + x_img] = dispmap_CC[y_img * width + x_img];
+			}
+		}
+	}
 };
 
 void normalize(uint8_t* dispmap, unsigned width, unsigned height)
 {
 	unsigned max = 0;
 	unsigned min = UCHAR_MAX;
-	unsigned img_size = width * height;
 	
-	for (unsigned i = 0; i < img_size; i++)
+	for (unsigned i = 0; i < width * height; i++)
 	{
 		if (dispmap[i] > max)
 		{
@@ -248,7 +317,7 @@ void normalize(uint8_t* dispmap, unsigned width, unsigned height)
 		}
 	}
 
-	for (unsigned i = 0; i > img_size; i++)
+	for (unsigned i = 0; i < width * height; i++)
 	{
 		dispmap[i] = (uint8_t)(255 * (dispmap[i] - min) / (max - min));
 	}
