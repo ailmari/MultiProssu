@@ -1,8 +1,4 @@
-#include <stdlib.h>
 #include <stdio.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <math.h>
 #include <windows.h>
 #include "lodepng.h"
 
@@ -11,9 +7,12 @@
 
 #define MAXDISP 65
 #define MINDISP 0
-#define WIN_SIZE 9
+#define WIN_SIZE_DISP 9
 
 #define THRESHOLD 8
+
+#define WIN_WIDTH_OC 32
+#define WIN_HEIGHT_OC 32
 
 void resize_and_greyscale(unsigned char* rgba, unsigned char* grey);
 void zncc(unsigned char* dmap, unsigned char* image1, unsigned char* image2, int width, int height, int min_disp, int max_disp);
@@ -30,7 +29,7 @@ int main()
 	double elapsed_time;
 
 	// Error code for LodePNG
-	uint32_t error;
+	int error;
 
 	// Left and right RGBA images
 	unsigned char* rgba_L;
@@ -47,13 +46,13 @@ int main()
 	unsigned char* disp_CC_OF;
 
 	// Width and height for input images
-	unsigned w_in_L;
-	unsigned h_in_L;
-	unsigned w_in_R;
-	unsigned h_in_R;
+	int w_in_L;
+	int h_in_L;
+	int w_in_R;
+	int h_in_R;
 	// Width and height for output images
-	unsigned w_out;
-	unsigned h_out;
+	int w_out;
+	int h_out;
 
 
 	// Decodes images
@@ -83,12 +82,12 @@ int main()
 	resize_and_greyscale(rgba_R, grey_R);
 
 	
-	// Calculates disparities
-	// Left
+	// Disparities calculated here
+	// Left-right pair
 	printf("ZNCC for left-right...\n");
 	disp_LR = (unsigned char*)malloc(w_out * h_out);
 	zncc(disp_LR, grey_L, grey_R, w_out, h_out, MINDISP, MAXDISP);
-	// Right
+	// Right-left pair
 	printf("ZNCC for right-left...\n");
 	disp_RL = (unsigned char*)malloc(w_out * h_out);
 	zncc(disp_RL, grey_R, grey_L, w_out, h_out, -MAXDISP, MINDISP);
@@ -106,16 +105,16 @@ int main()
 	occlusion_fill(disp_CC_OF, disp_CC, w_out, h_out);
 
 
-	// Normalizes image
+	// Normalization here
 	printf("Normalization...\n");
 	normalize(disp_CC_OF, w_out, h_out);
 	
 
 	// Stopping the timer
 	QueryPerformanceCounter(&t2);
-	elapsed_time = (t2.QuadPart - t1.QuadPart) * 1000.0 / frequency.QuadPart; // Time in ms
-	elapsed_time /= 1000.0;
-	printf("\nTotal execution time: %lf\n\n", elapsed_time);
+	elapsed_time = (t2.QuadPart - t1.QuadPart) * 1000.0 / frequency.QuadPart; // Time in milliseconds
+	elapsed_time /= 1000.0; // Time in seconds
+	printf("\nTotal execution time: %lf seconds\n\n", elapsed_time);
 	
 
 	// Encodes the images
@@ -161,7 +160,6 @@ void resize_and_greyscale(unsigned char* rgba, unsigned char* grey)
 
 void zncc(unsigned char* dmap, unsigned char* image1, unsigned char* image2, int width, int height, int min_disp, int max_disp)
 {
-	//int Standard_deviation;
 	double sum_of_window_values1;
 	double sum_of_window_values2;
 	double standart_deviation1;
@@ -170,75 +168,80 @@ void zncc(unsigned char* dmap, unsigned char* image1, unsigned char* image2, int
 	double best_disparity_value;
 	double current_max_sum;
 	double average1, average2;
-	int J;
-	int I;
 	int d;
 	int WIN_Y, WIN_X;
 	double std1, std2;
 
-	for (J = 0; J < height; J++) {
-		for (I = 0; I < width; I++) {
+	for (int y = 0; y < height; y++)
+	{
+		for (int x = 0; x < width; x++)
+		{
 			best_disparity_value = max_disp;
 			current_max_sum = -1;
-			for (d = min_disp; d <= max_disp; d++) {
+			for (d = min_disp; d <= max_disp; d++)
+			{
 				sum_of_window_values1 = 0;
 				sum_of_window_values2 = 0;
-				for (WIN_Y = -WIN_SIZE / 2; WIN_Y < WIN_SIZE / 2; WIN_Y++) {
-					for (WIN_X = -WIN_SIZE / 2; WIN_X < WIN_SIZE / 2; WIN_X++) {
-
-						if (J + WIN_Y >= 0 &&
-							I + WIN_X >= 0 &&
-							J + WIN_Y < height &&
-							I + WIN_X < width &&
-							I + WIN_X - d >= 0 &&
-							I + WIN_X - d < width)
+				for (WIN_Y = -WIN_SIZE_DISP / 2; WIN_Y < WIN_SIZE_DISP / 2; WIN_Y++)
+				{
+					for (WIN_X = -WIN_SIZE_DISP / 2; WIN_X < WIN_SIZE_DISP / 2; WIN_X++)
+					{
+						if (y + WIN_Y >= 0 &&
+							x + WIN_X >= 0 &&
+							y + WIN_Y < height &&
+							x + WIN_X < width &&
+							x + WIN_X - d >= 0 &&
+							x + WIN_X - d < width)
 						{
 							//Calculate the mean value for each window
-							sum_of_window_values1 += image1[(WIN_Y + J)*width + (I + WIN_X)];
-							sum_of_window_values2 += image2[(WIN_Y + J)*width + (I + WIN_X - d)];
+							sum_of_window_values1 += image1[(WIN_Y + y)*width + (x + WIN_X)];
+							sum_of_window_values2 += image2[(WIN_Y + y)*width + (x + WIN_X - d)];
 						}
 						else
+						{
 							continue;
-
-
+						}
 					}
 				}
-				average1 = sum_of_window_values1 / (WIN_SIZE*WIN_SIZE);
-				average2 = sum_of_window_values2 / (WIN_SIZE*WIN_SIZE);
+				average1 = sum_of_window_values1 / (WIN_SIZE_DISP*WIN_SIZE_DISP);
+				average2 = sum_of_window_values2 / (WIN_SIZE_DISP*WIN_SIZE_DISP);
 				std1 = 0;
 				std2 = 0;
 				multistand = 0;
 				//window_sum = 0;
-				for (WIN_Y = -WIN_SIZE / 2; WIN_Y < WIN_SIZE / 2; WIN_Y++) {
-					for (WIN_X = -WIN_SIZE / 2; WIN_X < WIN_SIZE / 2; WIN_X++) {
-
-						if (J + WIN_Y >= 0 &&
-							I + WIN_X >= 0 &&
-							J + WIN_Y < height &&
-							I + WIN_X < width &&
-							I + WIN_X - d >= 0 &&
-							I + WIN_X - d < width)
+				for (WIN_Y = -WIN_SIZE_DISP / 2; WIN_Y < WIN_SIZE_DISP / 2; WIN_Y++)
+				{
+					for (WIN_X = -WIN_SIZE_DISP / 2; WIN_X < WIN_SIZE_DISP / 2; WIN_X++)
+					{
+						if (y + WIN_Y >= 0 &&
+							x + WIN_X >= 0 &&
+							y + WIN_Y < height &&
+							x + WIN_X < width &&
+							x + WIN_X - d >= 0 &&
+							x + WIN_X - d < width)
 						{
 							//Calculate the actual ZNCC value for each windows
-							standart_deviation1 = image1[(WIN_Y + J)*width + (I + WIN_X)] - average1;
-							standart_deviation2 = image2[(WIN_Y + J)*width + (I + WIN_X - d)] - average2;
+							standart_deviation1 = image1[(WIN_Y + y)*width + (x + WIN_X)] - average1;
+							standart_deviation2 = image2[(WIN_Y + y)*width + (x + WIN_X - d)] - average2;
 							std1 += standart_deviation1*standart_deviation1;
 							std2 += standart_deviation2*standart_deviation2;
 							multistand += standart_deviation1*standart_deviation2;
 						}
 						else
+						{
 							continue;
-
+						}
 					}
 				}
 				multistand /= sqrt(std1) * sqrt(std2);
-				if (multistand > current_max_sum) {
+				if (multistand > current_max_sum)
+				{
 					current_max_sum = multistand;
 					best_disparity_value = d;
 				}
 
 			}
-			dmap[width*J + I] = (unsigned char)abs(best_disparity_value);
+			dmap[y * width + x] = (unsigned char)abs(best_disparity_value);
 		}
 	}
 }
@@ -260,17 +263,17 @@ void cross_check(unsigned char* dispmap_CC, unsigned char* dispmap_L, unsigned c
 
 void occlusion_fill(unsigned char* dispmap_OF, unsigned char* dispmap_CC, int width, int height)
 {
-	int win_width = 2;
-	int win_height = 2;
+	int win_width = WIN_WIDTH_OC;
+	int win_height = WIN_HEIGHT_OC;
 	int sum_win;
 	int pixel_count;
 	int mean_win;
 
-	for (int y_img = 0; y_img < height; y_img++)
+	for (int y = 0; y < height; y++)
 	{
-		for (int x_img = 0; x_img < width; x_img++)
+		for (int x = 0; x < width; x++)
 		{
-			if (dispmap_CC[y_img * width + x_img] == 0)
+			if (dispmap_CC[y * width + x] == 0)
 			{
 				sum_win = 0;
 				pixel_count = 0;
@@ -279,16 +282,16 @@ void occlusion_fill(unsigned char* dispmap_OF, unsigned char* dispmap_CC, int wi
 				{
 					for (int x_win = -win_width; x_win <= win_width; x_win++)
 					{
-						if (!(y_img + y_win >= 0) ||
-							!(y_img + y_win < height) ||
-							!(x_img + x_win >= 0) ||
-							!(x_img + x_win < width))
+						if (!(y + y_win >= 0) ||
+							!(y + y_win < height) ||
+							!(x + x_win >= 0) ||
+							!(x + x_win < width))
 						{
 							continue;
 						}
-						if (dispmap_CC[y_img * width + y_win + x_img + x_win] != 0)
+						if (dispmap_CC[y * width + y_win + x + x_win] != 0)
 						{
-							sum_win += dispmap_CC[y_img * width + y_win + x_img + x_win];
+							sum_win += dispmap_CC[y * width + y_win + x + x_win];
 							pixel_count++;
 						}
 					}
@@ -296,12 +299,12 @@ void occlusion_fill(unsigned char* dispmap_OF, unsigned char* dispmap_CC, int wi
 				if (pixel_count > 0)
 				{
 					mean_win = sum_win / pixel_count;
-					dispmap_OF[y_img * width + x_img] = mean_win;
+					dispmap_OF[y * width + x] = mean_win;
 				}
 			}
 			else
 			{
-				dispmap_OF[y_img * width + x_img] = dispmap_CC[y_img * width + x_img];
+				dispmap_OF[y * width + x] = dispmap_CC[y * width + x];
 			}
 		}
 	}
