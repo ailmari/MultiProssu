@@ -4,6 +4,8 @@
 #include "lodepng.h"
 #include <math.h>
 
+#include <omp.h>
+
 #define L_INPUT_IMAGE_NAME "im0.png"
 #define R_INPUT_IMAGE_NAME "im1.png"
 
@@ -83,7 +85,7 @@ int main()
 	grey_R = (unsigned char*)malloc(w_out * h_out);
 	resize_and_greyscale(rgba_R, grey_R);
 
-	
+
 	// Disparities calculated here
 	// Left-right pair
 	printf("ZNCC for left-right...\n");
@@ -94,13 +96,13 @@ int main()
 	disp_RL = (unsigned char*)malloc(w_out * h_out);
 	zncc(disp_RL, grey_R, grey_L, w_out, h_out, -MAXDISP, MINDISP);
 
-	
+
 	// Cross-checking performed here
 	printf("Cross-checking...\n");
 	disp_CC = (unsigned char*)malloc(w_out * h_out);
 	cross_check(disp_CC, disp_LR, disp_RL, w_out, h_out, THRESHOLD);
 
-	
+
 	// Occlusion filling here
 	printf("Occlusion-filling...\n");
 	disp_CC_OF = (unsigned char*)malloc(w_out * h_out);
@@ -110,14 +112,14 @@ int main()
 	// Normalization here
 	printf("Normalization...\n");
 	normalize(disp_CC_OF, w_out, h_out);
-	
+
 
 	// Stopping the timer
 	QueryPerformanceCounter(&t2);
 	elapsed_time = (t2.QuadPart - t1.QuadPart) * 1000.0 / frequency.QuadPart; // Time in milliseconds
 	elapsed_time /= 1000.0; // Time in seconds
 	printf("\nTotal execution time: %lf seconds\n\n", elapsed_time);
-	
+
 
 	// Encodes the images
 	// Grey left
@@ -147,10 +149,11 @@ void resize_and_greyscale(unsigned char* rgba, unsigned char* grey)
 	int y_out, x_out, y_in, x_in;
 	unsigned char red, green, blue;
 	//Height of Image
-	for (y_out = 0; y_out < 2016; y_out+=4)
+//#pragma omp parallel for private(y_out,x_out,y_in,x_in) shared(grey)
+	for (y_out = 0; y_out < 2016; y_out += 4)
 	{	//Width of Image
-		for (x_out = 0; x_out < 2940; x_out+=4)
-		{	
+		for (x_out = 0; x_out < 2940; x_out += 4)
+		{
 			red = rgba[4 * 2940 * y_out + 4 * x_out];
 			green = rgba[4 * 2940 * y_out + 4 * x_out + 1];
 			blue = rgba[4 * 2940 * y_out + 4 * x_out + 2];
@@ -174,10 +177,11 @@ void zncc(unsigned char* dmap, unsigned char* image1, unsigned char* image2, int
 	int d;
 	int WIN_Y, WIN_X;
 	double var1, var2;
-
-	for (int y = 0; y < height; y++)
+	int y, x;
+#pragma omp parallel for private(y,x,sum_of_window_values1, sum_of_window_values2, standart_deviation1, standart_deviation2, multistand, best_disparity_value, current_max_sum, average1, average2, d, WIN_Y, WIN_X, var1, var2) shared(dmap)
+	for (y = 0; y < height; y++)
 	{
-		for (int x = 0; x < width; x++)
+		for (x = 0; x < width; x++)
 		{
 			best_disparity_value = max_disp;
 			//Init for next value
@@ -253,7 +257,9 @@ void zncc(unsigned char* dmap, unsigned char* image1, unsigned char* image2, int
 
 void cross_check(unsigned char* dispmap_CC, unsigned char* dispmap_L, unsigned char* dispmap_R, int width, int height, int threshold)
 {
-	for (int i = 0; i < width * height; i++)
+	int i;
+//#pragma omp parallel for private(i)
+	for (i = 0; i < width * height; i++)
 	{	//If absolute value of L and R depthmaps differ by treshold
 		//Set disparity to 0
 		if (abs(dispmap_L[i] - dispmap_R[i]) > threshold)
@@ -274,10 +280,11 @@ void occlusion_fill(unsigned char* dispmap_OF, unsigned char* dispmap_CC, int wi
 	int sum_win;
 	int pixel_count;
 	int mean_win;
-
-	for (int y = 0; y < height; y++)
+	int y, x;
+#pragma omp parallel for private(y,x,sum_win,pixel_count,mean_win)
+	for (y = 0; y < height; y++)
 	{
-		for (int x = 0; x < width; x++)
+		for (x = 0; x < width; x++)
 		{
 			if (dispmap_CC[y * width + x] == 0)
 			{
