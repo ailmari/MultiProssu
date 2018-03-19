@@ -34,9 +34,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="vector_add_kernel.cl">
-      <Filter>Source Files</Filter>
-    </None>
     <None Include="resize_greyscale.cl">
       <Filter>Source Files</Filter>
     </None>
