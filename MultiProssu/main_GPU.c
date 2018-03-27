@@ -153,13 +153,13 @@ int main()
 	}
 
 	// Buffers for images
-	cl_mem buff_L = clCreateBuffer(context, CL_MEM_READ_WRITE, w_in*h_in, 0, &status);
+	cl_mem buff_L = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
 	if (status != CL_SUCCESS)
 	{
 		printf("clCreateBuffer error... %d\n", status);
 		return 1;
 	}
-	cl_mem buff_R = clCreateBuffer(context, CL_MEM_READ_WRITE, w_in*h_in, 0, &status);
+	cl_mem buff_R = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
 	if (status != CL_SUCCESS)
 	{
 		printf("clCreateBuffer error... %d\n", status);
@@ -178,11 +178,11 @@ int main()
 	clSetKernelArg(kernel, 2, sizeof(cl_mem), &buff_L);
 	clSetKernelArg(kernel, 3, sizeof(cl_mem), &buff_R);
 	clSetKernelArg(kernel, 4, sizeof(cl_sampler), &sampler);
-	clSetKernelArg(kernel, 5, sizeof(cl_int), &w_in);
-	clSetKernelArg(kernel, 6, sizeof(cl_int), &h_in);
+	clSetKernelArg(kernel, 5, sizeof(cl_int), &w_out);
+	clSetKernelArg(kernel, 6, sizeof(cl_int), &h_out);
 
 	size_t localWorkSize[2] = { 35, 24 };
-	size_t globalWorkSize[2] = { w_in, h_in };
+	size_t globalWorkSize[2] = { w_out, h_out };
 
 	status = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
 	if (status != CL_SUCCESS)
@@ -191,16 +191,17 @@ int main()
 		return 1;
 	}
 
-	unsigned char* disp = (unsigned char*)malloc(w_in * h_in);
-	size_t region[3] = { w_in, h_in, 0 };
-	status = clEnqueueReadBuffer(command_queue, buff_L, CL_TRUE, 0, w_in*h_in, disp, 0, NULL, NULL);
+	unsigned char* disp = (unsigned char*)malloc(w_out * h_out);
+	size_t region[3] = { w_out, h_out, 0 };
+	status = clEnqueueReadBuffer(command_queue, buff_L, CL_TRUE, 0, w_out*h_out, disp, 0, NULL, NULL);
 	if (status != CL_SUCCESS)
 	{
+
 		printf("clEnqueueReadImage error... %d\n", status);
 		return 1;
 	}
 
-	lodepng_encode_file("output/test.png", disp, w_in, h_in, LCT_GREY, 8);
+	lodepng_encode_file("output/test.png", disp, w_out, h_out, LCT_GREY, 8);
 
 	return 0;
 }
