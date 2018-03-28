@@ -1,7 +1,7 @@
-__kernel void resize_greyscale(__read_only image2d_t in_img_L,
-							__read_only image2d_t in_img_R,
-							__global uchar *out_img_L,
-							__global uchar *out_img_R,
+__kernel void resize_greyscale(__read_only image2d_t in_img_1,
+							__read_only image2d_t in_img_2,
+							__global uchar *out_img_1,
+							__global uchar *out_img_2,
 							sampler_t sampler,
 							int width,
 							int height)
@@ -11,10 +11,10 @@ __kernel void resize_greyscale(__read_only image2d_t in_img_L,
     
 	// Sample original image
 	int2 coords = {4*x, 4*y};
-    uint4 pxl_L = read_imageui(in_img_L, sampler, coords);
-    uint4 pxl_R = read_imageui(in_img_R, sampler, coords);
+    uint4 pxl_1 = read_imageui(in_img_1, sampler, coords);
+    uint4 pxl_2 = read_imageui(in_img_2, sampler, coords);
     
 	// Write resized and greyscale image to buffer
-    out_img_L[y*width + x] = 0.2126*pxl_L.x + 0.7152*pxl_L.y + 0.0722*pxl_L.z;
-	out_img_R[y*width + x] = 0.2126*pxl_R.x + 0.7152*pxl_R.y + 0.0722*pxl_R.z;
+    out_img_1[y*width + x] = 0.2126*pxl_1.x + 0.7152*pxl_1.y + 0.0722*pxl_1.z;
+	out_img_2[y*width + x] = 0.2126*pxl_2.x + 0.7152*pxl_2.y + 0.0722*pxl_2.z;
 }

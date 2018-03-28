@@ -8,6 +8,7 @@
 #define L_INPUT_IMAGE_NAME "im0.png"
 #define R_INPUT_IMAGE_NAME "im1.png"
 
+cl_kernel clOneKernelPlease(cl_context context, cl_device_id device_id, const char* file_name, const char* kernel_name);
 void clPrintInfo(cl_platform_id platform_id, cl_device_id device_id);
 int clCheckStatus(cl_int status_code);
 
@@ -83,24 +84,71 @@ int main()
 	clCheckStatus(status);
 
 
-	// Load the kernel source code into the array source_str
-	printf("Loading kernel source...\n");
+	// Create kernels
+	cl_kernel kernel = clOneKernelPlease(context, device_id, "resize_greyscale.cl", "resize_greyscale");
+
+
+	// Buffers for images
+	printf("Creating image buffers...\n");
+	cl_mem buff_L = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
+	clCheckStatus(status);
+	cl_mem buff_R = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
+	clCheckStatus(status);
+	cl_mem buff_disp_LR = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
+	clCheckStatus(status);
+
+
+	// Set kernel arguments
+	clSetKernelArg(kernel, 0, sizeof(cl_mem), &img_L);
+	clSetKernelArg(kernel, 1, sizeof(cl_mem), &img_R);
+	clSetKernelArg(kernel, 2, sizeof(cl_mem), &buff_L);
+	clSetKernelArg(kernel, 3, sizeof(cl_mem), &buff_R);
+	clSetKernelArg(kernel, 4, sizeof(cl_sampler), &sampler);
+	clSetKernelArg(kernel, 5, sizeof(cl_int), &w_out);
+	clSetKernelArg(kernel, 6, sizeof(cl_int), &h_out);
+
+
+	// Execute!
+	printf("Executing kernel...\n");
+	size_t localWorkSize[2] = { 35, 24 };
+	size_t globalWorkSize[2] = { w_out, h_out };
+
+	status = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
+	clCheckStatus(status);
+	clFinish(command_queue);
+
+
+	// Read buffer for results
+	unsigned char* disp = (unsigned char*)malloc(w_out * h_out);
+	size_t region[3] = { w_out, h_out, 0 };
+	status = clEnqueueReadBuffer(command_queue, buff_L, CL_TRUE, 0, w_out*h_out, disp, 0, NULL, NULL);
+	clCheckStatus(status);
+
+
+	// Encode and save results
+	lodepng_encode_file("output/test.png", disp, w_out, h_out, LCT_GREY, 8);
+
+	return 0;
+}
+
+cl_kernel clOneKernelPlease(cl_context context, cl_device_id device_id, const char* file_name, const char* kernel_name)
+{
+	cl_int status;
+
+	// Load the kernel source code into source_str
 	FILE *fp;
 	char *source_str;
 	size_t source_size;
 
-	fopen_s(&fp, "resize_greyscale.cl", "r");
+	fopen_s(&fp, file_name, "r");
 	source_str = (char*)malloc(0x100000);
 	source_size = fread(source_str, 1, 0x100000, fp);
 	fclose(fp);
 
-
-	// Creates and builds program
-	printf("Creating program...\n");
+	// Create and build a program
 	cl_program program = clCreateProgramWithSource(context, 1, (const char**)&source_str, (const size_t *)&source_size, &status);
 	clCheckStatus(status);
 
-	printf("Building program...\n");
 	status = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
 	if (status != CL_SUCCESS)
 	{
@@ -133,51 +181,13 @@ int main()
 			fprintf(stderr, "clBuildProgram failed\n");
 			exit(EXIT_FAILURE);
 		}
-		return 1;
 	}
 
-
-	// Buffers for images
-	printf("Creating image buffers...\n");
-	cl_mem buff_L = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
-	clCheckStatus(status);
-	cl_mem buff_R = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
-	clCheckStatus(status);
-
-
-	// Creates kernel
-	printf("Creating kernel...\n");
+	// Create kernel
 	cl_kernel kernel = clCreateKernel(program, "resize_greyscale", &status);
 	clCheckStatus(status);
-	clSetKernelArg(kernel, 0, sizeof(cl_mem), &img_L);
-	clSetKernelArg(kernel, 1, sizeof(cl_mem), &img_R);
-	clSetKernelArg(kernel, 2, sizeof(cl_mem), &buff_L);
-	clSetKernelArg(kernel, 3, sizeof(cl_mem), &buff_R);
-	clSetKernelArg(kernel, 4, sizeof(cl_sampler), &sampler);
-	clSetKernelArg(kernel, 5, sizeof(cl_int), &w_out);
-	clSetKernelArg(kernel, 6, sizeof(cl_int), &h_out);
 
-
-	// Execute!
-	printf("Executing kernel...\n");
-	size_t localWorkSize[2] = { 35, 24 };
-	size_t globalWorkSize[2] = { w_out, h_out };
-
-	status = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
-	clCheckStatus(status);
-
-
-	// Read buffer for results
-	unsigned char* disp = (unsigned char*)malloc(w_out * h_out);
-	size_t region[3] = { w_out, h_out, 0 };
-	status = clEnqueueReadBuffer(command_queue, buff_L, CL_TRUE, 0, w_out*h_out, disp, 0, NULL, NULL);
-	clCheckStatus(status);
-
-
-	// Encode and save results
-	lodepng_encode_file("output/test.png", disp, w_out, h_out, LCT_GREY, 8);
-
-	return 0;
+	return kernel;
 }
 
 void clPrintInfo(cl_platform_id platform_id, cl_device_id device_id)
