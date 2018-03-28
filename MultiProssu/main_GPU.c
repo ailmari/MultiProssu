@@ -78,16 +78,6 @@ int main()
 	clCheckStatus(status);
 
 
-	// Creates sampler
-	printf("Creating sampler...\n");
-	cl_sampler sampler = clCreateSampler(context, CL_FALSE, CL_ADDRESS_CLAMP_TO_EDGE, CL_FILTER_NEAREST, &status);
-	clCheckStatus(status);
-
-
-	// Create kernels
-	cl_kernel kernel = clOneKernelPlease(context, device_id, "resize_greyscale.cl", "resize_greyscale");
-
-
 	// Buffers for images
 	printf("Creating image buffers...\n");
 	cl_mem buff_L = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
@@ -98,14 +88,25 @@ int main()
 	clCheckStatus(status);
 
 
+	// Creates sampler
+	printf("Creating sampler...\n");
+	cl_sampler sampler = clCreateSampler(context, CL_FALSE, CL_ADDRESS_CLAMP_TO_EDGE, CL_FILTER_NEAREST, &status);
+	clCheckStatus(status);
+
+
+	// Create kernels
+	cl_kernel resize_greyscale_kernel = clOneKernelPlease(context, device_id, "resize_greyscale.cl", "resize_greyscale");
+	cl_kernel zncc_kernel = clOneKernelPlease(context, device_id, "zncc.cl", "zncc");
+
+
 	// Set kernel arguments
-	clSetKernelArg(kernel, 0, sizeof(cl_mem), &img_L);
-	clSetKernelArg(kernel, 1, sizeof(cl_mem), &img_R);
-	clSetKernelArg(kernel, 2, sizeof(cl_mem), &buff_L);
-	clSetKernelArg(kernel, 3, sizeof(cl_mem), &buff_R);
-	clSetKernelArg(kernel, 4, sizeof(cl_sampler), &sampler);
-	clSetKernelArg(kernel, 5, sizeof(cl_int), &w_out);
-	clSetKernelArg(kernel, 6, sizeof(cl_int), &h_out);
+	clSetKernelArg(resize_greyscale_kernel, 0, sizeof(cl_mem), &img_L);
+	clSetKernelArg(resize_greyscale_kernel, 1, sizeof(cl_mem), &img_R);
+	clSetKernelArg(resize_greyscale_kernel, 2, sizeof(cl_mem), &buff_L);
+	clSetKernelArg(resize_greyscale_kernel, 3, sizeof(cl_mem), &buff_R);
+	clSetKernelArg(resize_greyscale_kernel, 4, sizeof(cl_sampler), &sampler);
+	clSetKernelArg(resize_greyscale_kernel, 5, sizeof(cl_int), &w_out);
+	clSetKernelArg(resize_greyscale_kernel, 6, sizeof(cl_int), &h_out);
 
 
 	// Execute!
@@ -113,7 +114,7 @@ int main()
 	size_t localWorkSize[2] = { 35, 24 };
 	size_t globalWorkSize[2] = { w_out, h_out };
 
-	status = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
+	status = clEnqueueNDRangeKernel(command_queue, resize_greyscale_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
 	clCheckStatus(status);
 	clFinish(command_queue);
 
@@ -133,6 +134,9 @@ int main()
 
 cl_kernel clOneKernelPlease(cl_context context, cl_device_id device_id, const char* file_name, const char* kernel_name)
 {
+	//	This function simplifies creation of multiple kernels,
+	//	It wraps filereading, program building and kernel creation.
+
 	cl_int status;
 
 	// Load the kernel source code into source_str
@@ -184,7 +188,7 @@ cl_kernel clOneKernelPlease(cl_context context, cl_device_id device_id, const ch
 	}
 
 	// Create kernel
-	cl_kernel kernel = clCreateKernel(program, "resize_greyscale", &status);
+	cl_kernel kernel = clCreateKernel(program, kernel_name, &status);
 	clCheckStatus(status);
 
 	return kernel;

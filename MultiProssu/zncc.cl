@@ -16,7 +16,7 @@ __kernel void zncc(__global uchar *in_img_1,
 	double standart_deviation1;
 	double standart_deviation2;
 	double multistand = 0;
-	double best_disparity_value;
+	int best_disparity_value;
 	double current_max_sum;
 	double average1, average2;
 	int d;
@@ -88,5 +88,5 @@ __kernel void zncc(__global uchar *in_img_1,
 			best_disparity_value = d;
 		}
 	}
-	dmap[y * width + x] = (unsigned char)abs(best_disparity_value);
+	dmap[y*width + x] = (uint) abs(best_disparity_value);
 }
