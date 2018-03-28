@@ -1,4 +1,3 @@
-#define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <windows.h>
 #include <math.h>
@@ -8,9 +7,9 @@
 
 #define L_INPUT_IMAGE_NAME "im0.png"
 #define R_INPUT_IMAGE_NAME "im1.png"
-#define MAX_SOURCE_SIZE (0x100000)
 
-void printInfo(cl_platform_id platform_id, cl_device_id device_id);
+void clPrintInfo(cl_platform_id platform_id, cl_device_id device_id);
+int clCheckStatus(cl_int status_code);
 
 int main()
 {
@@ -25,27 +24,23 @@ int main()
 	clGetPlatformIDs(1, &platform_id, &platform_count);
 	clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_GPU, 1, &device_id, &device_count);
 
-	printInfo(platform_id, device_id);
+	clPrintInfo(platform_id, device_id);
+
 
 	// Creates context
 	printf("\nCreating context...\n");
 	cl_context context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &status);
-	if (status != CL_SUCCESS)
-	{
-		printf("OpenCL error... %d\n", status);
-		return 1;
-	}
+	clCheckStatus(status);
+
 
 	// Creates command queue
 	printf("Creating command queue...\n");
 	cl_command_queue command_queue = clCreateCommandQueue(context, device_id, 0, &status);
-	if (status != CL_SUCCESS)
-	{
-		printf("OpenCL error... %d\n", status);
-		return 1;
-	}
+	clCheckStatus(status);
+
 
 	// Decodes images
+	printf("Decoding images...\n");
 	unsigned char* rgba_L;
 	unsigned char* rgba_R;
 
@@ -58,7 +53,9 @@ int main()
 	int w_out = w_in / 4;
 	int h_out = h_in / 4;
 
+
 	// Creates OpenCL image objects
+	printf("Creating image objects...\n");
 	cl_image_format image_format;
 	image_format.image_channel_order = CL_RGBA;
 	image_format.image_channel_data_type = CL_UNSIGNED_INT8;
@@ -75,48 +72,35 @@ int main()
 	image_desc.buffer = NULL;
 
 	cl_mem img_L = clCreateImage(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, &image_format, &image_desc, rgba_L, &status);
-	if (status != CL_SUCCESS)
-	{
-		printf("OpenCL error... %d\n", status);
-		return 1;
-	}
+	clCheckStatus(status);
 	cl_mem img_R = clCreateImage(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, &image_format, &image_desc, rgba_R, &status);
-	if (status != CL_SUCCESS)
-	{
-		printf("OpenCL error... %d\n", status);
-		return 1;
-	}
+	clCheckStatus(status);
+
 
 	// Creates sampler
+	printf("Creating sampler...\n");
 	cl_sampler sampler = clCreateSampler(context, CL_FALSE, CL_ADDRESS_CLAMP_TO_EDGE, CL_FILTER_NEAREST, &status);
-	if (status != CL_SUCCESS)
-	{
-		printf("OpenCL error... %d\n", status);
-		return 1;
-	}
+	clCheckStatus(status);
+
 
 	// Load the kernel source code into the array source_str
+	printf("Loading kernel source...\n");
 	FILE *fp;
 	char *source_str;
 	size_t source_size;
 
-	fp = fopen("resize_greyscale.cl", "r");
-	if (!fp) {
-		fprintf(stderr, "Failed to load kernel.\n");
-		exit(1);
-	}
-	source_str = (char*)malloc(MAX_SOURCE_SIZE);
-	source_size = fread(source_str, 1, MAX_SOURCE_SIZE, fp);
+	fopen_s(&fp, "resize_greyscale.cl", "r");
+	source_str = (char*)malloc(0x100000);
+	source_size = fread(source_str, 1, 0x100000, fp);
 	fclose(fp);
 
-	// Creates program
-	cl_program program = clCreateProgramWithSource(context, 1, (const char**)&source_str, (const size_t *)&source_size, &status);
-	if (status != CL_SUCCESS)
-	{
-		printf("clCreateProgramWithSource error... %d\n", status);
-		return 1;
-	}
 
+	// Creates and builds program
+	printf("Creating program...\n");
+	cl_program program = clCreateProgramWithSource(context, 1, (const char**)&source_str, (const size_t *)&source_size, &status);
+	clCheckStatus(status);
+
+	printf("Building program...\n");
 	status = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
 	if (status != CL_SUCCESS)
 	{
@@ -152,27 +136,19 @@ int main()
 		return 1;
 	}
 
+
 	// Buffers for images
+	printf("Creating image buffers...\n");
 	cl_mem buff_L = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
-	if (status != CL_SUCCESS)
-	{
-		printf("clCreateBuffer error... %d\n", status);
-		return 1;
-	}
+	clCheckStatus(status);
 	cl_mem buff_R = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
-	if (status != CL_SUCCESS)
-	{
-		printf("clCreateBuffer error... %d\n", status);
-		return 1;
-	}
+	clCheckStatus(status);
+
 
 	// Creates kernel
+	printf("Creating kernel...\n");
 	cl_kernel kernel = clCreateKernel(program, "resize_greyscale", &status);
-	if (status != CL_SUCCESS)
-	{
-		printf("clCreateKernel error... %d\n", status);
-		return 1;
-	}
+	clCheckStatus(status);
 	clSetKernelArg(kernel, 0, sizeof(cl_mem), &img_L);
 	clSetKernelArg(kernel, 1, sizeof(cl_mem), &img_R);
 	clSetKernelArg(kernel, 2, sizeof(cl_mem), &buff_L);
@@ -181,32 +157,30 @@ int main()
 	clSetKernelArg(kernel, 5, sizeof(cl_int), &w_out);
 	clSetKernelArg(kernel, 6, sizeof(cl_int), &h_out);
 
+
+	// Execute!
+	printf("Executing kernel...\n");
 	size_t localWorkSize[2] = { 35, 24 };
 	size_t globalWorkSize[2] = { w_out, h_out };
 
 	status = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
-	if (status != CL_SUCCESS)
-	{
-		printf("clEnqueueNDRangeKernel error... %d\n", status);
-		return 1;
-	}
+	clCheckStatus(status);
 
+
+	// Read buffer for results
 	unsigned char* disp = (unsigned char*)malloc(w_out * h_out);
 	size_t region[3] = { w_out, h_out, 0 };
 	status = clEnqueueReadBuffer(command_queue, buff_L, CL_TRUE, 0, w_out*h_out, disp, 0, NULL, NULL);
-	if (status != CL_SUCCESS)
-	{
+	clCheckStatus(status);
 
-		printf("clEnqueueReadImage error... %d\n", status);
-		return 1;
-	}
 
+	// Encode and save results
 	lodepng_encode_file("output/test.png", disp, w_out, h_out, LCT_GREY, 8);
 
 	return 0;
 }
 
-void printInfo(cl_platform_id platform_id, cl_device_id device_id)
+void clPrintInfo(cl_platform_id platform_id, cl_device_id device_id)
 {
 	cl_char string[10240] = { 0 };
 	cl_uint num;
@@ -248,4 +222,13 @@ void printInfo(cl_platform_id platform_id, cl_device_id device_id)
 
 	clGetDeviceInfo(device_id, CL_DEVICE_MAX_WORK_ITEM_SIZES, sizeof(dims), &dims, NULL);
 	printf("Max work item sizes:	%ld B * %ld B * %ld B\n", dims[0], dims[1], dims[2]);
+}
+
+int clCheckStatus(cl_int status_code)
+{
+	if (status_code != CL_SUCCESS)
+	{
+		printf("OpenCL error... %d\n", status_code);
+		return 1;
+	}
 }
