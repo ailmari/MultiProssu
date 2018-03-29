@@ -34,6 +34,13 @@ int main()
 	// OpenCL errors go to this
 	cl_int status;
 
+	// Timer
+	LARGE_INTEGER frequency;
+	LARGE_INTEGER t1;
+	LARGE_INTEGER t2;
+	double elapsed_time;
+
+
 	// Gets platform and device
 	cl_platform_id platform_id;
 	cl_device_id device_id;
@@ -126,6 +133,11 @@ int main()
 	cl_kernel normalization_kernel = clOneKernelPlease(context, device_id, "normalization.cl", "normalization");
 
 
+	// Starting the timer
+	QueryPerformanceFrequency(&frequency); // Get ticks per second
+	QueryPerformanceCounter(&t1);
+
+
 	// EXECUTE!
 	size_t localWorkSize[2] = { 35, 24 };
 	size_t globalWorkSize[2] = { w_out, h_out };
@@ -195,6 +207,13 @@ int main()
 	clSetKernelArg(normalization_kernel, 3, sizeof(cl_int), &max_disp);
 	status = clEnqueueNDRangeKernel(command_queue, normalization_kernel, 1, NULL, globalWorkSize1D, localWorkSize1D, 0, NULL, NULL);
 	clCheckStatus(status);
+
+
+	// Stopping the timer
+	QueryPerformanceCounter(&t2);
+	elapsed_time = (t2.QuadPart - t1.QuadPart) * 1000.0 / frequency.QuadPart; // Time in milliseconds
+	elapsed_time /= 1000.0; // Time in seconds
+	printf("\nTotal execution time: %lf seconds\n\n", elapsed_time);
 
 
 	// Read buffers for results
