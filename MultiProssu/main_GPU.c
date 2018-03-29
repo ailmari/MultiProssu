@@ -198,6 +198,7 @@ int main()
 
 
 	// Read buffers for results
+	printf("Reading and saving results...\n");
 	size_t region[3] = { w_out, h_out, 0 };
 	// Grey left
 	unsigned char* grey_L = (unsigned char*)malloc(w_out * h_out);
