@@ -59,12 +59,6 @@ int main()
 	clCheckStatus(status);
 
 
-	// Creates command queue
-	printf("Creating command queue...\n");
-	cl_command_queue command_queue = clCreateCommandQueue(context, device_id, 0, &status);
-	clCheckStatus(status);
-
-
 	// Decodes images
 	printf("Decoding images...\n");
 	unsigned char* rgba_L;
@@ -133,9 +127,29 @@ int main()
 	cl_kernel normalization_kernel = clOneKernelPlease(context, device_id, "normalization.cl", "normalization");
 
 
+	// OpenCL Events for benchmarking kernels
+	cl_event event_0; // Resize and greyscale
+	cl_event event_1; // ZNCC left-right
+	cl_event event_2; // ZNCC right-left
+	cl_event event_3; // Cross-checking
+	cl_event event_4; // Occlusion filling
+	cl_event event_5; // Normalization
+
+	cl_ulong t1_oc;
+	cl_ulong t2_oc;
+	cl_double elapsed_time_oc;
+	cl_double total_time_oc = 0;
+
+
 	// Starting the timer
 	QueryPerformanceFrequency(&frequency); // Get ticks per second
 	QueryPerformanceCounter(&t1);
+
+
+	// Creates command queue
+	printf("Creating command queue...\n");
+	cl_command_queue command_queue = clCreateCommandQueue(context, device_id, CL_QUEUE_PROFILING_ENABLE, &status);
+	clCheckStatus(status);
 
 
 	// EXECUTE!
@@ -145,7 +159,7 @@ int main()
 	size_t globalWorkSize1D[1] = { globalWorkSize[0] * globalWorkSize[1] };
 
 	// Resize and greyscale
-	printf("Performing resize and greyscale...\n");
+	printf("\nPerforming resize and greyscale...\n");
 	clSetKernelArg(resize_greyscale_kernel, 0, sizeof(cl_mem), &img_L);
 	clSetKernelArg(resize_greyscale_kernel, 1, sizeof(cl_mem), &img_R);
 	clSetKernelArg(resize_greyscale_kernel, 2, sizeof(cl_mem), &buff_L);
@@ -153,7 +167,7 @@ int main()
 	clSetKernelArg(resize_greyscale_kernel, 4, sizeof(cl_sampler), &sampler);
 	clSetKernelArg(resize_greyscale_kernel, 5, sizeof(cl_int), &w_out);
 	clSetKernelArg(resize_greyscale_kernel, 6, sizeof(cl_int), &h_out);
-	status = clEnqueueNDRangeKernel(command_queue, resize_greyscale_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
+	status = clEnqueueNDRangeKernel(command_queue, resize_greyscale_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, &event_0);
 	clCheckStatus(status);
 
 	// ZNCC
@@ -167,7 +181,7 @@ int main()
 	clSetKernelArg(zncc_kernel, 5, sizeof(cl_int), &win_size_disp);
 	clSetKernelArg(zncc_kernel, 6, sizeof(cl_int), &min_disp);
 	clSetKernelArg(zncc_kernel, 7, sizeof(cl_int), &max_disp);
-	status = clEnqueueNDRangeKernel(command_queue, zncc_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
+	status = clEnqueueNDRangeKernel(command_queue, zncc_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, &event_1);
 	clCheckStatus(status);
 	// Right-left - some variables stay the same
 	printf("Performing ZNCC for right-left...\n");
@@ -176,7 +190,7 @@ int main()
 	clSetKernelArg(zncc_kernel, 2, sizeof(cl_mem), &buff_disp_RL);
 	clSetKernelArg(zncc_kernel, 6, sizeof(cl_int), &max_disp_neg);
 	clSetKernelArg(zncc_kernel, 7, sizeof(cl_int), &min_disp);
-	status = clEnqueueNDRangeKernel(command_queue, zncc_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
+	status = clEnqueueNDRangeKernel(command_queue, zncc_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, &event_2);
 	clCheckStatus(status);
 
 	// Cross-checking
@@ -185,10 +199,10 @@ int main()
 	clSetKernelArg(crosscheck_kernel, 1, sizeof(cl_mem), &buff_disp_RL);
 	clSetKernelArg(crosscheck_kernel, 2, sizeof(cl_mem), &buff_disp_CC);
 	clSetKernelArg(crosscheck_kernel, 3, sizeof(cl_int), &threshold);
-	status = clEnqueueNDRangeKernel(command_queue, crosscheck_kernel, 1, NULL, globalWorkSize1D, localWorkSize1D, 0, NULL, NULL);
+	status = clEnqueueNDRangeKernel(command_queue, crosscheck_kernel, 1, NULL, globalWorkSize1D, localWorkSize1D, 0, NULL, &event_3);
 	clCheckStatus(status);
 
-	// Occlusionfilling
+	// Occlusion filling
 	printf("Performing occlusion filling...\n");
 	clSetKernelArg(occlusionfill_kernel, 0, sizeof(cl_mem), &buff_disp_CC);
 	clSetKernelArg(occlusionfill_kernel, 1, sizeof(cl_mem), &buff_disp_CC_OF);
@@ -196,7 +210,7 @@ int main()
 	clSetKernelArg(occlusionfill_kernel, 3, sizeof(cl_int), &h_out);
 	clSetKernelArg(occlusionfill_kernel, 4, sizeof(cl_int), &win_width_of);
 	clSetKernelArg(occlusionfill_kernel, 5, sizeof(cl_int), &win_height_of);
-	status = clEnqueueNDRangeKernel(command_queue, occlusionfill_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
+	status = clEnqueueNDRangeKernel(command_queue, occlusionfill_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, &event_4);
 	clCheckStatus(status);
 
 	// Normalization
@@ -205,15 +219,53 @@ int main()
 	clSetKernelArg(normalization_kernel, 1, sizeof(cl_int), &w_out);
 	clSetKernelArg(normalization_kernel, 2, sizeof(cl_int), &h_out);
 	clSetKernelArg(normalization_kernel, 3, sizeof(cl_int), &max_disp);
-	status = clEnqueueNDRangeKernel(command_queue, normalization_kernel, 1, NULL, globalWorkSize1D, localWorkSize1D, 0, NULL, NULL);
+	status = clEnqueueNDRangeKernel(command_queue, normalization_kernel, 1, NULL, globalWorkSize1D, localWorkSize1D, 0, NULL, &event_5);
 	clCheckStatus(status);
-
+	
 
 	// Stopping the timer
 	QueryPerformanceCounter(&t2);
 	elapsed_time = (t2.QuadPart - t1.QuadPart) * 1000.0 / frequency.QuadPart; // Time in milliseconds
 	elapsed_time /= 1000.0; // Time in seconds
-	printf("\nTotal execution time: %lf seconds\n\n", elapsed_time);
+
+
+	// Kernel profiling
+	clFinish(command_queue);
+	clGetEventProfilingInfo(event_0, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t1_oc, NULL);
+	clGetEventProfilingInfo(event_0, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t2_oc, NULL);
+	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-11;
+	total_time_oc += elapsed_time_oc;
+	printf("\nResize and greyscale kernel: %lf seconds\n", elapsed_time_oc);
+	clGetEventProfilingInfo(event_1, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t1_oc, NULL);
+	clGetEventProfilingInfo(event_1, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t2_oc, NULL);
+	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-11;
+	total_time_oc += elapsed_time_oc;
+	printf("ZNCC left-right kernel:      %lf seconds\n", elapsed_time_oc);
+	clGetEventProfilingInfo(event_2, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t1_oc, NULL);
+	clGetEventProfilingInfo(event_2, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t2_oc, NULL);
+	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-11;
+	total_time_oc += elapsed_time_oc;
+	printf("ZNCC right-left kernel:      %lf seconds\n", elapsed_time_oc);
+	clGetEventProfilingInfo(event_3, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t1_oc, NULL);
+	clGetEventProfilingInfo(event_3, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t2_oc, NULL);
+	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-11;
+	total_time_oc += elapsed_time_oc;
+	printf("Cross-check kernel:          %lf seconds\n", elapsed_time_oc);
+	clGetEventProfilingInfo(event_4, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t1_oc, NULL);
+	clGetEventProfilingInfo(event_4, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t2_oc, NULL);
+	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-11;
+	total_time_oc += elapsed_time_oc;
+	printf("Occlusion fill kernel:       %lf seconds\n", elapsed_time_oc);
+	clGetEventProfilingInfo(event_5, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t1_oc, NULL);
+	clGetEventProfilingInfo(event_5, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t2_oc, NULL);
+	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-11;
+	total_time_oc += elapsed_time_oc;
+	printf("Normalization kernel:        %lf seconds\n", elapsed_time_oc);
+
+
+	// Print host and kernel times
+	printf("\nHost time:   %lf seconds\n", elapsed_time);
+	printf("Kernel time: %lf seconds\n\n", total_time_oc);
 
 
 	// Read buffers for results
