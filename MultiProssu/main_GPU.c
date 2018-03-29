@@ -8,12 +8,23 @@
 #define L_INPUT_IMAGE_NAME "im0.png"
 #define R_INPUT_IMAGE_NAME "im1.png"
 
+#define MAX_DISP 65
+#define MIN_DISP 0
+#define WIN_SIZE_DISP 9
+
 cl_kernel clOneKernelPlease(cl_context context, cl_device_id device_id, const char* file_name, const char* kernel_name);
 void clPrintInfo(cl_platform_id platform_id, cl_device_id device_id);
 int clCheckStatus(cl_int status_code);
 
 int main()
 {
+	// Tunable parameters
+	cl_int max_disp = MAX_DISP;
+	cl_int max_disp_neg = -MAX_DISP;
+	cl_int min_disp = MIN_DISP;
+	cl_int win_size_disp = WIN_SIZE_DISP;
+
+	// OpenCL errors go to this
 	cl_int status;
 
 	// Gets platform and device
@@ -86,6 +97,8 @@ int main()
 	clCheckStatus(status);
 	cl_mem buff_disp_LR = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
 	clCheckStatus(status);
+	cl_mem buff_disp_RL = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
+	clCheckStatus(status);
 
 
 	// Creates sampler
@@ -99,7 +112,12 @@ int main()
 	cl_kernel zncc_kernel = clOneKernelPlease(context, device_id, "zncc.cl", "zncc");
 
 
-	// Set kernel arguments
+	// Execute!
+	printf("Executing kernel...\n");
+	size_t localWorkSize[2] = { 35, 24 };
+	size_t globalWorkSize[2] = { w_out, h_out };
+
+	// Resize and greyscale
 	clSetKernelArg(resize_greyscale_kernel, 0, sizeof(cl_mem), &img_L);
 	clSetKernelArg(resize_greyscale_kernel, 1, sizeof(cl_mem), &img_R);
 	clSetKernelArg(resize_greyscale_kernel, 2, sizeof(cl_mem), &buff_L);
@@ -107,27 +125,57 @@ int main()
 	clSetKernelArg(resize_greyscale_kernel, 4, sizeof(cl_sampler), &sampler);
 	clSetKernelArg(resize_greyscale_kernel, 5, sizeof(cl_int), &w_out);
 	clSetKernelArg(resize_greyscale_kernel, 6, sizeof(cl_int), &h_out);
-
-
-	// Execute!
-	printf("Executing kernel...\n");
-	size_t localWorkSize[2] = { 35, 24 };
-	size_t globalWorkSize[2] = { w_out, h_out };
-
 	status = clEnqueueNDRangeKernel(command_queue, resize_greyscale_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
 	clCheckStatus(status);
-	clFinish(command_queue);
+
+	// ZNCC
+	// Left-right
+	clSetKernelArg(zncc_kernel, 0, sizeof(cl_mem), &buff_L);
+	clSetKernelArg(zncc_kernel, 1, sizeof(cl_mem), &buff_R);
+	clSetKernelArg(zncc_kernel, 2, sizeof(cl_mem), &buff_disp_LR);
+	clSetKernelArg(zncc_kernel, 3, sizeof(cl_sampler), &sampler);
+	clSetKernelArg(zncc_kernel, 4, sizeof(cl_int), &w_out);
+	clSetKernelArg(zncc_kernel, 5, sizeof(cl_int), &h_out);
+	clSetKernelArg(zncc_kernel, 6, sizeof(cl_int), &win_size_disp);
+	clSetKernelArg(zncc_kernel, 7, sizeof(cl_int), &min_disp);
+	clSetKernelArg(zncc_kernel, 8, sizeof(cl_int), &max_disp);
+	status = clEnqueueNDRangeKernel(command_queue, zncc_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
+	clCheckStatus(status);
+	// Right-left - some variables stay the same
+	clSetKernelArg(zncc_kernel, 0, sizeof(cl_mem), &buff_R);
+	clSetKernelArg(zncc_kernel, 1, sizeof(cl_mem), &buff_L);
+	clSetKernelArg(zncc_kernel, 2, sizeof(cl_mem), &buff_disp_RL);
+	clSetKernelArg(zncc_kernel, 7, sizeof(cl_int), &max_disp_neg);
+	clSetKernelArg(zncc_kernel, 8, sizeof(cl_int), &min_disp);
+	status = clEnqueueNDRangeKernel(command_queue, zncc_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
+	clCheckStatus(status);
 
 
-	// Read buffer for results
-	unsigned char* disp = (unsigned char*)malloc(w_out * h_out);
+	// Read buffers for results
 	size_t region[3] = { w_out, h_out, 0 };
-	status = clEnqueueReadBuffer(command_queue, buff_L, CL_TRUE, 0, w_out*h_out, disp, 0, NULL, NULL);
+	// Grey left
+	unsigned char* grey_L = (unsigned char*)malloc(w_out * h_out);
+	status = clEnqueueReadBuffer(command_queue, buff_L, CL_TRUE, 0, w_out*h_out, grey_L, 0, NULL, NULL);
+	clCheckStatus(status);
+	// Grey right
+	unsigned char* grey_R = (unsigned char*)malloc(w_out * h_out);
+	status = clEnqueueReadBuffer(command_queue, buff_R, CL_TRUE, 0, w_out*h_out, grey_R, 0, NULL, NULL);
+	clCheckStatus(status);
+	// Disparity left-right
+	unsigned char* disp_LR = (unsigned char*)malloc(w_out * h_out);
+	status = clEnqueueReadBuffer(command_queue, buff_disp_LR, CL_TRUE, 0, w_out*h_out, disp_LR, 0, NULL, NULL);
+	clCheckStatus(status);
+	// Disparity right-left
+	unsigned char* disp_RL = (unsigned char*)malloc(w_out * h_out);
+	status = clEnqueueReadBuffer(command_queue, buff_disp_RL, CL_TRUE, 0, w_out*h_out, disp_RL, 0, NULL, NULL);
 	clCheckStatus(status);
 
 
 	// Encode and save results
-	lodepng_encode_file("output/test.png", disp, w_out, h_out, LCT_GREY, 8);
+	lodepng_encode_file("output/GPU_grey_L.png", grey_L, w_out, h_out, LCT_GREY, 8);
+	lodepng_encode_file("output/GPU_grey_R.png", grey_L, w_out, h_out, LCT_GREY, 8);
+	lodepng_encode_file("output/GPU_disp_LR.png", disp_LR, w_out, h_out, LCT_GREY, 8);
+	lodepng_encode_file("output/GPU_disp_RL.png", disp_RL, w_out, h_out, LCT_GREY, 8);
 
 	return 0;
 }
