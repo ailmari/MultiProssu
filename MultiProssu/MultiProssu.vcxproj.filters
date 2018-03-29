@@ -40,5 +40,11 @@
     <None Include="zncc.cl">
       <Filter>Source Files</Filter>
     </None>
+    <None Include="crosscheck.cl">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="occlusionfill.cl">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

@@ -138,7 +138,7 @@ int main()
 	error = lodepng_encode_file("output/disp_CC.png", disp_CC, w_out, h_out, LCT_GREY, 8);
 	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
 	// Cross-checked & occlusion-filled & normalized
-	error = lodepng_encode_file("output/disp_CC_OF.png", disp_CC_OF, w_out, h_out, LCT_GREY, 8);
+	error = lodepng_encode_file("output/disp_CC_OF_norm.png", disp_CC_OF, w_out, h_out, LCT_GREY, 8);
 	if (error) printf("Error %u: %s\n", error, lodepng_error_text(error));
 
 	return 0;

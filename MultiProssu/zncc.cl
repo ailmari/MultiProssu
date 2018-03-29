@@ -1,7 +1,6 @@
 __kernel void zncc(__global uchar *in_img_1,
 				__global uchar *in_img_2,
-				__global uchar *dmap,
-				sampler_t sampler,
+				__global uchar *disp_map,
 				int width,
 				int height,
 				int win_size,
@@ -88,5 +87,5 @@ __kernel void zncc(__global uchar *in_img_1,
 			best_disparity_value = d;
 		}
 	}
-	dmap[y*width + x] = (uint) abs(best_disparity_value);
+	disp_map[y*width + x] = (uint) abs(best_disparity_value);
 }

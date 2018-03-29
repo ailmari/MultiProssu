@@ -11,6 +11,10 @@
 #define MAX_DISP 65
 #define MIN_DISP 0
 #define WIN_SIZE_DISP 9
+#define THRESHOLD 8
+
+#define WIN_WIDTH_OF 32
+#define WIN_HEIGHT_OF 32
 
 cl_kernel clOneKernelPlease(cl_context context, cl_device_id device_id, const char* file_name, const char* kernel_name);
 void clPrintInfo(cl_platform_id platform_id, cl_device_id device_id);
@@ -22,7 +26,10 @@ int main()
 	cl_int max_disp = MAX_DISP;
 	cl_int max_disp_neg = -MAX_DISP;
 	cl_int min_disp = MIN_DISP;
-	cl_int win_size_disp = WIN_SIZE_DISP;
+	cl_int win_size_disp = WIN_SIZE_DISP; // Disparity window
+	cl_int threshold = THRESHOLD; // Cross-check threshold
+	cl_int win_width_of = WIN_WIDTH_OF; // Occlusion fill window
+	cl_int win_height_of = WIN_HEIGHT_OF; // Occlusion fill window
 
 	// OpenCL errors go to this
 	cl_int status;
@@ -99,6 +106,10 @@ int main()
 	clCheckStatus(status);
 	cl_mem buff_disp_RL = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
 	clCheckStatus(status);
+	cl_mem buff_disp_CC = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
+	clCheckStatus(status);
+	cl_mem buff_disp_CC_OF = clCreateBuffer(context, CL_MEM_READ_WRITE, w_out*h_out, 0, &status);
+	clCheckStatus(status);
 
 
 	// Creates sampler
@@ -110,14 +121,18 @@ int main()
 	// Create kernels
 	cl_kernel resize_greyscale_kernel = clOneKernelPlease(context, device_id, "resize_greyscale.cl", "resize_greyscale");
 	cl_kernel zncc_kernel = clOneKernelPlease(context, device_id, "zncc.cl", "zncc");
+	cl_kernel crosscheck_kernel = clOneKernelPlease(context, device_id, "crosscheck.cl", "crosscheck");
+	cl_kernel occlusionfill_kernel = clOneKernelPlease(context, device_id, "occlusionfill.cl", "occlusionfill");
 
 
 	// Execute!
-	printf("Executing kernel...\n");
 	size_t localWorkSize[2] = { 35, 24 };
 	size_t globalWorkSize[2] = { w_out, h_out };
+	size_t localWorkSize1D[1] = { localWorkSize[0] * localWorkSize[1] };
+	size_t globalWorkSize1D[1] = { globalWorkSize[0] * globalWorkSize[1] };
 
 	// Resize and greyscale
+	printf("Executing resize and greyscale...\n");
 	clSetKernelArg(resize_greyscale_kernel, 0, sizeof(cl_mem), &img_L);
 	clSetKernelArg(resize_greyscale_kernel, 1, sizeof(cl_mem), &img_R);
 	clSetKernelArg(resize_greyscale_kernel, 2, sizeof(cl_mem), &buff_L);
@@ -130,26 +145,46 @@ int main()
 
 	// ZNCC
 	// Left-right
+	printf("Executing ZNCC for left-right...\n");
 	clSetKernelArg(zncc_kernel, 0, sizeof(cl_mem), &buff_L);
 	clSetKernelArg(zncc_kernel, 1, sizeof(cl_mem), &buff_R);
 	clSetKernelArg(zncc_kernel, 2, sizeof(cl_mem), &buff_disp_LR);
-	clSetKernelArg(zncc_kernel, 3, sizeof(cl_sampler), &sampler);
-	clSetKernelArg(zncc_kernel, 4, sizeof(cl_int), &w_out);
-	clSetKernelArg(zncc_kernel, 5, sizeof(cl_int), &h_out);
-	clSetKernelArg(zncc_kernel, 6, sizeof(cl_int), &win_size_disp);
-	clSetKernelArg(zncc_kernel, 7, sizeof(cl_int), &min_disp);
-	clSetKernelArg(zncc_kernel, 8, sizeof(cl_int), &max_disp);
+	clSetKernelArg(zncc_kernel, 3, sizeof(cl_int), &w_out);
+	clSetKernelArg(zncc_kernel, 4, sizeof(cl_int), &h_out);
+	clSetKernelArg(zncc_kernel, 5, sizeof(cl_int), &win_size_disp);
+	clSetKernelArg(zncc_kernel, 6, sizeof(cl_int), &min_disp);
+	clSetKernelArg(zncc_kernel, 7, sizeof(cl_int), &max_disp);
 	status = clEnqueueNDRangeKernel(command_queue, zncc_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
 	clCheckStatus(status);
 	// Right-left - some variables stay the same
+	printf("Executing ZNCC for right-left...\n");
 	clSetKernelArg(zncc_kernel, 0, sizeof(cl_mem), &buff_R);
 	clSetKernelArg(zncc_kernel, 1, sizeof(cl_mem), &buff_L);
 	clSetKernelArg(zncc_kernel, 2, sizeof(cl_mem), &buff_disp_RL);
-	clSetKernelArg(zncc_kernel, 7, sizeof(cl_int), &max_disp_neg);
-	clSetKernelArg(zncc_kernel, 8, sizeof(cl_int), &min_disp);
+	clSetKernelArg(zncc_kernel, 6, sizeof(cl_int), &max_disp_neg);
+	clSetKernelArg(zncc_kernel, 7, sizeof(cl_int), &min_disp);
 	status = clEnqueueNDRangeKernel(command_queue, zncc_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
 	clCheckStatus(status);
 
+	// Cross-checking
+	printf("Executing cross-check...\n");
+	clSetKernelArg(crosscheck_kernel, 0, sizeof(cl_mem), &buff_disp_LR);
+	clSetKernelArg(crosscheck_kernel, 1, sizeof(cl_mem), &buff_disp_RL);
+	clSetKernelArg(crosscheck_kernel, 2, sizeof(cl_mem), &buff_disp_CC);
+	clSetKernelArg(crosscheck_kernel, 3, sizeof(cl_int), &threshold);
+	status = clEnqueueNDRangeKernel(command_queue, crosscheck_kernel, 1, NULL, globalWorkSize1D, localWorkSize1D, 0, NULL, NULL);
+	clCheckStatus(status);
+
+	// Occlusionfilling
+	printf("Executing occlusion filling...\n");
+	clSetKernelArg(occlusionfill_kernel, 0, sizeof(cl_mem), &buff_disp_CC);
+	clSetKernelArg(occlusionfill_kernel, 1, sizeof(cl_mem), &buff_disp_CC_OF);
+	clSetKernelArg(occlusionfill_kernel, 2, sizeof(cl_int), &w_out);
+	clSetKernelArg(occlusionfill_kernel, 3, sizeof(cl_int), &h_out);
+	clSetKernelArg(occlusionfill_kernel, 4, sizeof(cl_int), &win_width_of);
+	clSetKernelArg(occlusionfill_kernel, 5, sizeof(cl_int), &win_height_of);
+	status = clEnqueueNDRangeKernel(command_queue, occlusionfill_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL);
+	clCheckStatus(status);
 
 	// Read buffers for results
 	size_t region[3] = { w_out, h_out, 0 };
@@ -169,13 +204,23 @@ int main()
 	unsigned char* disp_RL = (unsigned char*)malloc(w_out * h_out);
 	status = clEnqueueReadBuffer(command_queue, buff_disp_RL, CL_TRUE, 0, w_out*h_out, disp_RL, 0, NULL, NULL);
 	clCheckStatus(status);
+	// Cross-checked
+	unsigned char* disp_CC = (unsigned char*)malloc(w_out * h_out);
+	status = clEnqueueReadBuffer(command_queue, buff_disp_CC, CL_TRUE, 0, w_out*h_out, disp_CC, 0, NULL, NULL);
+	clCheckStatus(status);
+	// Occlusion filled
+	unsigned char* disp_CC_OF = (unsigned char*)malloc(w_out * h_out);
+	status = clEnqueueReadBuffer(command_queue, buff_disp_CC_OF, CL_TRUE, 0, w_out*h_out, disp_CC_OF, 0, NULL, NULL);
+	clCheckStatus(status);
 
 
 	// Encode and save results
-	lodepng_encode_file("output/GPU_grey_L.png", grey_L, w_out, h_out, LCT_GREY, 8);
-	lodepng_encode_file("output/GPU_grey_R.png", grey_L, w_out, h_out, LCT_GREY, 8);
-	lodepng_encode_file("output/GPU_disp_LR.png", disp_LR, w_out, h_out, LCT_GREY, 8);
-	lodepng_encode_file("output/GPU_disp_RL.png", disp_RL, w_out, h_out, LCT_GREY, 8);
+	lodepng_encode_file("output/_grey_L_GPU.png", grey_L, w_out, h_out, LCT_GREY, 8);
+	lodepng_encode_file("output/_grey_R_GPU.png", grey_R, w_out, h_out, LCT_GREY, 8);
+	lodepng_encode_file("output/_disp_LR_GPU.png", disp_LR, w_out, h_out, LCT_GREY, 8);
+	lodepng_encode_file("output/_disp_RL_GPU.png", disp_RL, w_out, h_out, LCT_GREY, 8);
+	lodepng_encode_file("output/_disp_CC_GPU.png", disp_CC, w_out, h_out, LCT_GREY, 8);
+	lodepng_encode_file("output/_disp_CC_OF_GPU.png", disp_CC_OF, w_out, h_out, LCT_GREY, 8);
 
 	return 0;
 }

@@ -127,6 +127,8 @@
     <ClInclude Include="lodepng.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="crosscheck.cl" />
+    <None Include="occlusionfill.cl" />
     <None Include="resize_greyscale.cl" />
     <None Include="zncc.cl" />
   </ItemGroup>
