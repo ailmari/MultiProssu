@@ -221,51 +221,52 @@ int main()
 	clSetKernelArg(normalization_kernel, 3, sizeof(cl_int), &max_disp);
 	status = clEnqueueNDRangeKernel(command_queue, normalization_kernel, 1, NULL, globalWorkSize1D, localWorkSize1D, 0, NULL, &event_5);
 	clCheckStatus(status);
-	
 
-	// Stopping the timer
+	clFinish(command_queue);
+
+
+	// Stopping the host timer
 	QueryPerformanceCounter(&t2);
-	elapsed_time = (t2.QuadPart - t1.QuadPart) * 1000.0 / frequency.QuadPart; // Time in milliseconds
-	elapsed_time /= 1000.0; // Time in seconds
+	elapsed_time = (float)(t2.QuadPart - t1.QuadPart) / frequency.QuadPart; // Time in seconds
 
 
 	// Kernel profiling
-	clFinish(command_queue);
 	clGetEventProfilingInfo(event_0, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t1_oc, NULL);
 	clGetEventProfilingInfo(event_0, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t2_oc, NULL);
-	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-11;
+	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-9;
 	total_time_oc += elapsed_time_oc;
 	printf("\nResize and greyscale kernel: %lf seconds\n", elapsed_time_oc);
 	clGetEventProfilingInfo(event_1, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t1_oc, NULL);
 	clGetEventProfilingInfo(event_1, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t2_oc, NULL);
-	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-11;
+	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-9;
 	total_time_oc += elapsed_time_oc;
 	printf("ZNCC left-right kernel:      %lf seconds\n", elapsed_time_oc);
 	clGetEventProfilingInfo(event_2, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t1_oc, NULL);
 	clGetEventProfilingInfo(event_2, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t2_oc, NULL);
-	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-11;
+	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-9;
 	total_time_oc += elapsed_time_oc;
 	printf("ZNCC right-left kernel:      %lf seconds\n", elapsed_time_oc);
 	clGetEventProfilingInfo(event_3, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t1_oc, NULL);
 	clGetEventProfilingInfo(event_3, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t2_oc, NULL);
-	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-11;
+	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-9;
 	total_time_oc += elapsed_time_oc;
 	printf("Cross-check kernel:          %lf seconds\n", elapsed_time_oc);
 	clGetEventProfilingInfo(event_4, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t1_oc, NULL);
 	clGetEventProfilingInfo(event_4, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t2_oc, NULL);
-	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-11;
+	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-9;
 	total_time_oc += elapsed_time_oc;
 	printf("Occlusion fill kernel:       %lf seconds\n", elapsed_time_oc);
 	clGetEventProfilingInfo(event_5, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &t1_oc, NULL);
 	clGetEventProfilingInfo(event_5, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &t2_oc, NULL);
-	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-11;
+	elapsed_time_oc = (t2_oc - t1_oc)*1.0e-9;
 	total_time_oc += elapsed_time_oc;
 	printf("Normalization kernel:        %lf seconds\n", elapsed_time_oc);
 
 
 	// Print host and kernel times
-	printf("\nHost time:   %lf seconds\n", elapsed_time);
-	printf("Kernel time: %lf seconds\n\n", total_time_oc);
+	printf("\nTotal Kernel time:	%lf seconds\n", total_time_oc);
+	printf("Total execution time:	%lf seconds\n", elapsed_time);
+	printf("Host side time: %lf seconds\n\n", elapsed_time - total_time_oc);
 
 
 	// Read buffers for results
