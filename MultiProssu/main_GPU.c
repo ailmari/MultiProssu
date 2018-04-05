@@ -53,14 +53,8 @@ int main()
 	clPrintInfo(platform_id, device_id);
 
 
-	// Creates context
-	printf("\nCreating context...\n");
-	cl_context context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &status);
-	clCheckStatus(status);
-
-
 	// Decodes images
-	printf("Decoding images...\n");
+	printf("\nDecoding images...\n");
 	unsigned char* rgba_L;
 	unsigned char* rgba_R;
 
@@ -72,6 +66,17 @@ int main()
 
 	int w_out = w_in / 4;
 	int h_out = h_in / 4;
+
+
+	// Starting the timer
+	QueryPerformanceFrequency(&frequency); // Get ticks per second
+	QueryPerformanceCounter(&t1);
+
+
+	// Creates context
+	printf("Creating context...\n");
+	cl_context context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &status);
+	clCheckStatus(status);
 
 
 	// Creates OpenCL image objects
@@ -141,11 +146,6 @@ int main()
 	cl_double total_time_oc = 0;
 
 
-	// Starting the timer
-	QueryPerformanceFrequency(&frequency); // Get ticks per second
-	QueryPerformanceCounter(&t1);
-
-
 	// Creates command queue
 	printf("Creating command queue...\n");
 	cl_command_queue command_queue = clCreateCommandQueue(context, device_id, CL_QUEUE_PROFILING_ENABLE, &status);
@@ -183,7 +183,7 @@ int main()
 	clSetKernelArg(zncc_kernel, 7, sizeof(cl_int), &max_disp);
 	status = clEnqueueNDRangeKernel(command_queue, zncc_kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, &event_1);
 	clCheckStatus(status);
-	// Right-left - some variables stay the same
+	// Right-left - some parameters stay the same
 	printf("Performing ZNCC for right-left...\n");
 	clSetKernelArg(zncc_kernel, 0, sizeof(cl_mem), &buff_R);
 	clSetKernelArg(zncc_kernel, 1, sizeof(cl_mem), &buff_L);
